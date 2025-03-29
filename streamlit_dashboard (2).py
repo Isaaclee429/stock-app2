@@ -24,12 +24,17 @@ symbol = symbols[symbol_name]
 def load_data(symbol):
     df = yf.download(symbol, start="2023-01-01", end=datetime.today().strftime('%Y-%m-%d'))
     df.dropna(inplace=True)
+
+    # 🛠 修復多層欄位問題
+    df.columns = [str(col) for col in df.columns]
+
     close_series = df["Close"].squeeze()
     df["rsi"] = ta.momentum.RSIIndicator(close=close_series).rsi()
     df["signal"] = "HOLD"
     df.loc[df["rsi"] < 30, "signal"] = "BUY"
     df.loc[df["rsi"] > 70, "signal"] = "SELL"
     return df
+
 
 data = load_data(symbol)
 
