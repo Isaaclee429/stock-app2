@@ -23,10 +23,16 @@ symbol = symbols[symbol_name]
 @st.cache_data
 def load_data(symbol):
     df = yf.download(symbol, start="2023-01-01", end=datetime.today().strftime('%Y-%m-%d'))
+
+    # 解決多層欄位問題
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = [col[0] if isinstance(col, tuple) else col for col in df.columns]
+
     df.dropna(inplace=True)
 
-    # 🛠 修復多層欄位問題
-    df.columns = [str(col) for col in df.columns]
+    if "Close" not in df.columns:
+        st.error("❌ 無法找到 'Close' 欄位，可能資料來源異常。")
+        return pd.DataFrame()
 
     close_series = df["Close"].squeeze()
     df["rsi"] = ta.momentum.RSIIndicator(close=close_series).rsi()
@@ -34,7 +40,6 @@ def load_data(symbol):
     df.loc[df["rsi"] < 30, "signal"] = "BUY"
     df.loc[df["rsi"] > 70, "signal"] = "SELL"
     return df
-
 
 data = load_data(symbol)
 
