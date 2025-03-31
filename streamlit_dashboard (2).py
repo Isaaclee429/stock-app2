@@ -1,9 +1,11 @@
+# streamlit_dashboard.py
 import streamlit as st
 import yfinance as yf
 import pandas as pd
 import matplotlib.pyplot as plt
 import ta
 from datetime import datetime
+from fpdf import FPDF
 
 st.set_page_config(page_title="多商品 RSI 策略分析儀表板", layout="wide")
 st.title("📊 多商品 RSI 策略分析儀表板")
@@ -21,19 +23,12 @@ symbol_name = st.sidebar.selectbox("選擇商品：", list(symbols.keys()))
 symbol = symbols[symbol_name]
 
 @st.cache_data
+
 def load_data(symbol):
     df = yf.download(symbol, start="2023-01-01", end=datetime.today().strftime('%Y-%m-%d'))
-
-    # 解決多層欄位問題
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = [col[0] if isinstance(col, tuple) else col for col in df.columns]
-
     df.dropna(inplace=True)
-
-    if "Close" not in df.columns:
-        st.error("❌ 無法找到 'Close' 欄位，可能資料來源異常。")
-        return pd.DataFrame()
-
     close_series = df["Close"].squeeze()
     df["rsi"] = ta.momentum.RSIIndicator(close=close_series).rsi()
     df["signal"] = "HOLD"
@@ -44,7 +39,6 @@ def load_data(symbol):
 data = load_data(symbol)
 
 st.subheader(f"📈 {symbol_name} 價格與 RSI")
-
 try:
     if "Close" in data.columns and "rsi" in data.columns:
         st.line_chart(data[["Close", "rsi"]])
@@ -93,3 +87,18 @@ if portfolio:
     st.pyplot(fig)
 
     st.success(f"策略總報酬：{total_return:.2f}%")
+
+    if st.button("📄 下載 PDF 報告"):
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("Arial", size=12)
+        pdf.cell(200, 10, txt="RSI 策略分析報告", ln=True, align='C')
+        pdf.cell(200, 10, txt=f"商品：{symbol_name}", ln=True)
+        pdf.cell(200, 10, txt=f"價格：${latest_price:.2f}", ln=True)
+        pdf.cell(200, 10, txt=f"RSI：{latest_rsi:.2f}", ln=True)
+        pdf.cell(200, 10, txt=f"建議操作：{latest_signal}", ln=True)
+        pdf.cell(200, 10, txt=f"策略總報酬：{total_return:.2f}%", ln=True)
+        filename = f"report_{symbol}.pdf"
+        pdf.output(filename)
+        with open(filename, "rb") as f:
+            st.download_button("⬇️ 點此下載報告", f, file_name=filename)
