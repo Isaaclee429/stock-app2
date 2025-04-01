@@ -4,7 +4,7 @@ import yfinance as yf
 import pandas as pd
 import matplotlib.pyplot as plt
 import ta
-from datetime import datetime
+from datetime import datetime, timedelta
 from fpdf import FPDF
 
 st.set_page_config(page_title="多商品 RSI 策略分析儀表板", layout="wide")
@@ -25,7 +25,8 @@ symbol = symbols[symbol_name]
 @st.cache_data
 
 def load_data(symbol):
-    df = yf.download(symbol, start="2023-01-01", end=datetime.today().strftime('%Y-%m-%d'))
+    today = datetime.today()
+    df = yf.download(symbol, start="2023-01-01", end=today.strftime('%Y-%m-%d'))
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = [col[0] if isinstance(col, tuple) else col for col in df.columns]
     df.dropna(inplace=True)
