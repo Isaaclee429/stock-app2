@@ -8,7 +8,7 @@ from datetime import datetime
 from fpdf import FPDF
 
 st.set_page_config(page_title="多商品 RSI 策略分析儀表板", layout="wide")
-st.title("📊 多商品 RSI 策略分析儀表板")
+st.title("📊 多商品 RSI 策略分析儀表板（更新日期：2025/04/02）")
 
 symbols = {
     "黃金 (GC=F)": "GC=F",
