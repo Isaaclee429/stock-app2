@@ -48,9 +48,17 @@ try:
 except Exception as e:
     st.error(f"❌ 畫圖失敗：{e}")
 
-latest_price = data["Close"].iloc[-1]
-latest_rsi = data["rsi"].iloc[-1] if "rsi" in data.columns else None
-latest_signal = data["signal"].iloc[-1] if "signal" in data.columns else "HOLD"
+if not data.empty and "Close" in data.columns:
+    latest_price = data["Close"].iloc[-1]
+    latest_rsi = data["rsi"].iloc[-1] if "rsi" in data.columns else None
+    latest_signal = data["signal"].iloc[-1] if "signal" in data.columns else "HOLD"
+
+    st.metric("最新價格", f"${latest_price:.2f}")
+    if latest_rsi:
+        st.metric("RSI 值", f"{latest_rsi:.2f}")
+    st.metric("建議操作", latest_signal)
+else:
+    st.warning("⚠ 無法取得該商品的最新資料，請選擇其他商品或稍後再試。")
 
 st.metric("最新價格", f"${latest_price:.2f}")
 if latest_rsi:
