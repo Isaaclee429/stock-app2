@@ -1,4 +1,3 @@
-
 # streamlit_dashboard.py
 import streamlit as st
 import yfinance as yf
@@ -30,19 +29,22 @@ end_date = st.sidebar.date_input("選擇結束日期", value=datetime.today())
 @st.cache_data
 
 def load_data(symbol, start_date, end_date):
-    df = yf.download(symbol, start=start_date, end=end_date.strftime('%Y-%m-%d'))
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = [col[0] if isinstance(col, tuple) else col for col in df.columns]
-    df.dropna(inplace=True)
-    if df.empty:
-        return df, None
-    close_series = df["Close"].squeeze()
-    df["rsi"] = ta.momentum.RSIIndicator(close=close_series).rsi()
-    df["signal"] = "HOLD"
-    df.loc[df["rsi"] < 30, "signal"] = "BUY"
-    df.loc[df["rsi"] > 70, "signal"] = "SELL"
-    last_date = df.index[-1].strftime('%Y-%m-%d')
-    return df, last_date
+    # 自動回退日期機制（最多退回 7 天內）
+    for i in range(8):
+        test_end = end_date - timedelta(days=i)
+        df = yf.download(symbol, start=start_date, end=test_end.strftime('%Y-%m-%d'))
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = [col[0] if isinstance(col, tuple) else col for col in df.columns]
+        df.dropna(inplace=True)
+        if not df.empty:
+            close_series = df["Close"].squeeze()
+            df["rsi"] = ta.momentum.RSIIndicator(close=close_series).rsi()
+            df["signal"] = "HOLD"
+            df.loc[df["rsi"] < 30, "signal"] = "BUY"
+            df.loc[df["rsi"] > 70, "signal"] = "SELL"
+            last_date = df.index[-1].strftime('%Y-%m-%d')
+            return df, last_date
+    return pd.DataFrame(), None
 
 # 讀取資料
 data, last_date = load_data(symbol, start_date, end_date)
