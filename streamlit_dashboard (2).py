@@ -54,11 +54,15 @@ if not data.empty and "Close" in data.columns:
     latest_signal = data["signal"].iloc[-1] if "signal" in data.columns else "HOLD"
 
     st.metric("最新價格", f"${latest_price:.2f}")
-    if latest_rsi:
+    if latest_rsi is not None:
         st.metric("RSI 值", f"{latest_rsi:.2f}")
     st.metric("建議操作", latest_signal)
+
+    # 🟢 RSI 策略模擬與報酬繼續處理（可放這裡）
+
 else:
     st.warning("⚠ 無法取得該商品的最新資料，請選擇其他商品或稍後再試。")
+    st.stop()  # ❗這一行讓程式到這裡就停止，不再執行後面報表區
 
 st.metric("最新價格", f"${latest_price:.2f}")
 if latest_rsi:
