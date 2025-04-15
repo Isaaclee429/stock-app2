@@ -17,6 +17,8 @@ symbols = {
     "Apple (AAPL)": "AAPL",
     "Tesla (TSLA)": "TSLA",
     "QQQ (納指ETF)": "QQQ"
+    "白銀 (SI=F)": "SI=F"
+    "原油 (CL=F)": "CL=F"
 }
 
 symbol_name = st.sidebar.selectbox("選擇商品：", list(symbols.keys()))
