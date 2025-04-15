@@ -17,7 +17,7 @@ symbols = {
     "Apple (AAPL)": "AAPL",
     "Tesla (TSLA)": "TSLA",
     "QQQ (納指ETF)": "QQQ"
-    "白銀 (SI=F)": "SI=F"
+    "白銀 (SI=F)": "SI=F",          # ✅ 加逗號
     "原油 (CL=F)": "CL=F"
 }
 
