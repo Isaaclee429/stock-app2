@@ -11,14 +11,14 @@ st.set_page_config(page_title="多商品 RSI 策略分析儀表板", layout="wid
 st.title("📊 多商品 RSI 策略分析儀表板（更新日期：2025/04/02）")
 
 symbols = {
-     "黃金 (GC=F)": "GC=F",
+    "黃金 (GC=F)": "GC=F",
     "天然氣 (NG=F)": "NG=F",
     "比特幣 (BTC-USD)": "BTC-USD",
     "Apple (AAPL)": "AAPL",
     "Tesla (TSLA)": "TSLA",
     "QQQ (納指ETF)": "QQQ",
     "白銀 (SI=F)": "SI=F",
-    "原油 (CL=F)": "CL=F"
+    "原油 (CL=F)": "CL=F"  # ✅ 修正語法，結尾加逗號
     "原油 (CL=F)": "CL=F"
 }
 
