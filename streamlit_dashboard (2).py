@@ -1,11 +1,11 @@
-# 多商品 RSI 策略分析儀表板 - 修正 Finnhub 403 錯誤，只對支援資產使用 Finnhub
+# 多商品 RSI 策略分析儀表板 - 加入 API 測試按鈕顯示 Finnhub JSON 結果
 
 import streamlit as st
 import yfinance as yf
 import pandas as pd
 import matplotlib.pyplot as plt
 import traceback
-from datetime import timedelta
+from datetime import timedelta, datetime
 import finnhub
 import time
 
@@ -32,6 +32,7 @@ def get_finnhub_price_data(symbol, start_date, end_date):
         else:
             return pd.DataFrame()
     except Exception as e:
+        st.warning(f"⚠️ Finnhub 抓取 {symbol} 失敗：{e}")
         return pd.DataFrame()
 
 symbols = {
@@ -48,7 +49,6 @@ symbols = {
     "愛奇藝 (IQ)": "IQ"
 }
 
-# 只有以下資產才使用 Finnhub，其餘一律使用 yfinance（避免 403 錯誤）
 finnhub_assets = {"AAPL", "TSLA", "AMZN", "NFLX", "IQ", "BINANCE:BTCUSDT"}
 
 fallback_map = {
@@ -65,6 +65,29 @@ symbol = symbols[product]
 
 start_date = st.date_input("起始日期", pd.to_datetime("2023-01-01"))
 end_date = st.date_input("結束日期", pd.to_datetime("today"))
+
+# 加入 Finnhub 即時 API 測試按鈕
+if st.button("🔍 測試 API 是否可取得資料 (Finnhub)"):
+    if symbol in finnhub_assets:
+        st.info(f"正在查詢 Finnhub 上的 {symbol}...")
+        try:
+            test_start = datetime(2024, 4, 1)
+            test_end = datetime(2024, 4, 10)
+            start_unix = int(time.mktime(test_start.timetuple()))
+            end_unix = int(time.mktime(test_end.timetuple()))
+            res = finnhub_client.stock_candles(symbol, 'D', start_unix, end_unix)
+            st.write("📦 API 回傳 JSON：")
+            st.json(res)
+            if res.get("s") == "ok":
+                st.success("✅ API 回傳成功，有資料！")
+            else:
+                st.warning("⚠️ API 回傳成功，但無資料（s ≠ ok）")
+        except Exception as e:
+            st.error(f"❌ 呼叫 API 時錯誤：{e}")
+    else:
+        st.warning("此商品不在 Finnhub 支援列表中，將使用 yfinance")
+
+# 以下為原本資料讀取與圖表流程
 
 debug_logs = []
 df = pd.DataFrame()
