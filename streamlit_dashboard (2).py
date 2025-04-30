@@ -1,4 +1,4 @@
-# 多商品 RSI 策略分析儀表板 - 整合 Finnhub API 替代資料源
+# 多商品 RSI 策略分析儀表板 - 修正 Finnhub 403 錯誤，只對支援資產使用 Finnhub
 
 import streamlit as st
 import yfinance as yf
@@ -10,7 +10,7 @@ import finnhub
 import time
 
 # 初始化 Finnhub（請填入你自己的 API 金鑰）
-FINNHUB_API_KEY = "d08nb41r01qju5m7is30d08nb41r01qju5m7is3g"  # ⬅️ 你要在這裡填入 API Key
+FINNHUB_API_KEY = "YOUR_API_KEY_HERE"
 finnhub_client = finnhub.Client(api_key=FINNHUB_API_KEY)
 
 def get_finnhub_price_data(symbol, start_date, end_date):
@@ -32,7 +32,6 @@ def get_finnhub_price_data(symbol, start_date, end_date):
         else:
             return pd.DataFrame()
     except Exception as e:
-        st.error(f"Finnhub 抓取失敗：{e}")
         return pd.DataFrame()
 
 symbols = {
@@ -49,7 +48,8 @@ symbols = {
     "愛奇藝 (IQ)": "IQ"
 }
 
-finnhub_assets = {"AAPL", "TSLA", "AMZN", "NFLX", "IQ", "GLD", "BINANCE:BTCUSDT"}
+# 只有以下資產才使用 Finnhub，其餘一律使用 yfinance（避免 403 錯誤）
+finnhub_assets = {"AAPL", "TSLA", "AMZN", "NFLX", "IQ", "BINANCE:BTCUSDT"}
 
 fallback_map = {
     "GC=F": "GLD",
