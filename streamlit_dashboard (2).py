@@ -1,10 +1,11 @@
-# 多商品 RSI 策略分析儀表板 - 含錯誤追蹤報表與 Debug
+# 多商品 RSI 策略分析儀表板 - 自動回補資料 + 錯誤追蹤報表
 
 import streamlit as st
 import yfinance as yf
 import pandas as pd
 import matplotlib.pyplot as plt
 import traceback
+from datetime import timedelta
 
 symbols = {
     "黃金 (GC=F)": "GC=F",
@@ -37,20 +38,39 @@ end_date = st.date_input("結束日期", pd.to_datetime("today"))
 
 debug_logs = []
 df = pd.DataFrame()
+success = False
 
 try:
     debug_logs.append(f"原始代碼查詢：{symbol}")
-    df = yf.download(symbol, start=start_date, end=end_date)
 
-    if df.empty and symbol in fallback_map:
+    for i in range(8):  # 往回最多 7 天
+        adjusted_end = end_date - timedelta(days=i)
+        debug_logs.append(f"嘗試下載資料：{symbol}, 結束日期：{adjusted_end.date()}")
+        df = yf.download(symbol, start=start_date, end=adjusted_end)
+        if not df.empty:
+            debug_logs.append(f"✅ 成功取得資料，使用結束日期：{adjusted_end.date()}")
+            end_date = adjusted_end
+            success = True
+            break
+
+    if not success and symbol in fallback_map:
         fallback = fallback_map[symbol]
-        debug_logs.append(f"原始資料為空，改用替代商品：{fallback}")
         st.warning(f"⚠️ 無法取得 {symbol} 資料，自動改用替代商品：{fallback}")
-        df = yf.download(fallback, start=start_date, end=end_date)
-        symbol = fallback
-        product += f"（改為 {fallback}）"
+        debug_logs.append(f"原始資料為空，改用替代商品：{fallback}")
 
-    if df.empty:
+        for i in range(8):
+            adjusted_end = end_date - timedelta(days=i)
+            debug_logs.append(f"嘗試下載替代資料：{fallback}, 結束日期：{adjusted_end.date()}")
+            df = yf.download(fallback, start=start_date, end=adjusted_end)
+            if not df.empty:
+                debug_logs.append(f"✅ 成功取得替代商品資料，結束日期：{adjusted_end.date()}")
+                symbol = fallback
+                product += f"（改為 {fallback}）"
+                end_date = adjusted_end
+                success = True
+                break
+
+    if not success:
         st.warning(f"⚠️ 無法取得「{product}」的歷史資料，請稍後再試，或選擇其他商品。")
         st.info(f"📅 最後可用資料日期：尚無資料記錄（可能為資料來源暫時中斷）")
         debug_logs.append("最終資料仍為空，未能成功下載任何可用資料。")
@@ -80,7 +100,6 @@ except Exception as e:
     debug_logs.append("⚠️ 發生例外錯誤：\n" + err)
     st.error(f"資料擷取時發生錯誤：{e}")
 
-# Debug 日誌與追蹤報表區塊
 with st.expander("🧾 錯誤追蹤報表與 Debug 日誌", expanded=True):
     for log in debug_logs:
         st.code(log)
