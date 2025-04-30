@@ -1,4 +1,4 @@
-# 多商品 RSI 策略分析儀表板 - 強化版（含錯誤處理）
+# 多商品 RSI 策略分析儀表板 - 強化版（含錯誤處理與替代商品）
 
 import streamlit as st
 import yfinance as yf
@@ -20,6 +20,13 @@ symbols = {
     "愛奇藝 (IQ)": "IQ"
 }
 
+# 替代代碼對照
+fallback_map = {
+    "GC=F": "GLD",
+    "SI=F": "SLV",
+    "NG=F": "UNG"
+}
+
 # Streamlit 介面
 st.title("📊 多商品 RSI 策略分析儀表板")
 st.markdown("更新日期：2025/04/29")
@@ -35,6 +42,13 @@ end_date = st.date_input("結束日期", pd.to_datetime("today"))
 # 嘗試抓資料
 try:
     df = yf.download(symbol, start=start_date, end=end_date)
+    if df.empty and symbol in fallback_map:
+        fallback = fallback_map[symbol]
+        st.warning(f"⚠️ 無法取得 {symbol} 資料，自動改用替代商品：{fallback}")
+        df = yf.download(fallback, start=start_date, end=end_date)
+        symbol = fallback
+        product += f"（改為 {fallback}）"
+
     if df.empty:
         st.warning(f"⚠️ 無法取得「{product}」的歷史資料，請稍後再試，或選擇其他商品。")
         st.info(f"📅 最後可用資料日期：尚無資料記錄（可能為資料來源暫時中斷）")
@@ -63,3 +77,4 @@ try:
 
 except Exception as e:
     st.error(f"資料擷取時發生錯誤：{e}")
+
