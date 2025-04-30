@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 from fpdf import FPDF
 from datetime import date, timedelta
 import io
+import os
 
 # 商品與備援代碼
 asset_map = {
@@ -16,7 +17,7 @@ asset_map = {
     "Apple (AAPL)": ["AAPL"]
 }
 
-# 強化版資料下載：整體回溯區間與多商品備援
+# 強化下載 + 區間回溯 + 錯誤日誌
 def safe_download_v4(ticker_list, start_date, end_date, max_lookback_days=30):
     max_allowed = date.today() - timedelta(days=2)
     end_date = min(end_date, max_allowed)
@@ -46,7 +47,7 @@ def apply_rsi_strategy(df, rsi_period=14, lower=30, upper=70):
     df["Cumulative Return"] = (1 + df["Strategy Return"]).cumprod()
     return df
 
-# PDF 報告生成功能
+# 匯出 PDF 報告
 def generate_pdf_report(final_return, win_rate, asset_label, symbol_used):
     pdf = FPDF()
     pdf.add_page()
@@ -60,24 +61,37 @@ def generate_pdf_report(final_return, win_rate, asset_label, symbol_used):
     pdf.output(pdf_output)
     return pdf_output.getvalue()
 
-# Streamlit UI
-st.title("📊 Multi-Asset RSI Strategy Assistant (Stable Version)")
+# 主頁 UI
+st.title("📊 Multi-Asset RSI Strategy Assistant (Stable + Offline Fallback)")
 asset_label = st.selectbox("Select Asset", list(asset_map.keys()))
 start_date = st.date_input("Start Date", value=date(2023, 1, 1))
 end_date = st.date_input("End Date", value=date(2025, 4, 30))
 
-# 嘗試資料下載與備援代碼
+# 嘗試從網路抓資料
 df, used_start, used_end, attempt_log = safe_download_v4(asset_map[asset_label], start_date, end_date)
 
+# 若網路資料失敗 → 改用本地 CSV 備援
 if df is None:
-    st.error("❌ No valid data found after fallback and backtracking.")
-    with st.expander("🧾 Debug Download Attempts"):
+    st.warning("⚠️ Online data not available, trying local CSV backup...")
+    for sym in asset_map[asset_label]:
+        csv_path = f"local_backup_{sym.replace('=','')}.csv"
+        if os.path.exists(csv_path):
+            df = pd.read_csv(csv_path, index_col=0, parse_dates=True)
+            df["symbol_used"] = sym
+            used_start = df.index.min().date()
+            used_end = df.index.max().date()
+            st.success(f"✅ Loaded local CSV backup: `{csv_path}`")
+            break
+
+# 如果還是無資料 → 報錯並顯示日誌
+if df is None or df.empty:
+    st.error("❌ No valid data found even with local backup.")
+    with st.expander("🧾 Download Attempts"):
         for sym, s, e, success in attempt_log:
             st.text(f"{sym} | {s} → {e}: {'✅ Success' if success else '❌ Empty'}")
 else:
     symbol_used = df["symbol_used"].iloc[0]
-    st.success(f"✅ Data loaded from `{symbol_used}`: {used_start} ~ {used_end}")
-
+    st.success(f"✅ Data loaded from `{symbol_used}` ({used_start} ~ {used_end})")
     df = apply_rsi_strategy(df)
 
     # RSI 圖
@@ -89,23 +103,20 @@ else:
     ax1.set_title("RSI Indicator")
     st.pyplot(fig1)
 
-    # 策略報酬圖
+    # 策略績效圖
     st.subheader("💰 Strategy Performance")
     fig2, ax2 = plt.subplots(figsize=(10, 4))
     ax2.plot(df.index, df["Cumulative Return"], color="orange")
-    ax2.set_title("Cumulative Strategy Return")
+    ax2.set_title("Cumulative Return")
     st.pyplot(fig2)
 
-    # 統計
+    # 回測統計
     final_return = df["Cumulative Return"].iloc[-1]
     win_rate = (df["Strategy Return"] > 0).sum() / df["Strategy Return"].count()
-    st.subheader("📈 Strategy Summary")
-    st.markdown(f"""
-    - **Final cumulative return**: `{final_return:.2f}x`
-    - **Win rate**: `{win_rate:.2%}`
-    """)
+    st.subheader("📈 Summary")
+    st.markdown(f"- **Final Return**: `{final_return:.2f}x`\n- **Win Rate**: `{win_rate:.2%}`")
 
     # 匯出按鈕
-    st.download_button("⬇ Download CSV", df.to_csv().encode(), file_name=f"{symbol_used}_RSI_strategy.csv", mime="text/csv")
-    pdf_data = generate_pdf_report(final_return, win_rate, asset_label, symbol_used)
-    st.download_button("⬇ Download PDF Report", pdf_data, file_name=f"{symbol_used}_RSI_report.pdf", mime="application/pdf")
+    st.download_button("⬇ Download CSV", df.to_csv().encode(), file_name=f"{symbol_used}_RSI.csv", mime="text/csv")
+    pdf_bytes = generate_pdf_report(final_return, win_rate, asset_label, symbol_used)
+    st.download_button("⬇ Download PDF Report", pdf_bytes, file_name=f"{symbol_used}_RSI_Report.pdf", mime="application/pdf")
