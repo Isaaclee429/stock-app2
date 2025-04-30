@@ -1,158 +1,84 @@
-# 多商品 RSI 策略分析儀表板 - 加入 API 測試按鈕顯示 Finnhub JSON 結果
-
 import streamlit as st
 import yfinance as yf
 import pandas as pd
+import ta
 import matplotlib.pyplot as plt
-import traceback
-from datetime import timedelta, datetime
-import finnhub
-import time
+from datetime import date, timedelta
 
-# 初始化 Finnhub（請填入你自己的 API 金鑰）
-FINNHUB_API_KEY = "d08nb41r01qju5m7is30d08nb41r01qju5m7is3g"
-finnhub_client = finnhub.Client(api_key=FINNHUB_API_KEY)
-
-def get_finnhub_price_data(symbol, start_date, end_date):
-    try:
-        start_unix = int(time.mktime(start_date.timetuple()))
-        end_unix = int(time.mktime(end_date.timetuple()))
-        res = finnhub_client.stock_candles(symbol, 'D', start_unix, end_unix)
-        if res and res['s'] == 'ok':
-            df = pd.DataFrame({
-                'Date': pd.to_datetime(res['t'], unit='s'),
-                'Open': res['o'],
-                'High': res['h'],
-                'Low': res['l'],
-                'Close': res['c'],
-                'Volume': res['v']
-            })
-            df.set_index('Date', inplace=True)
-            return df
-        else:
-            return pd.DataFrame()
-    except Exception as e:
-        st.warning(f"⚠️ Finnhub 抓取 {symbol} 失敗：{e}")
-        return pd.DataFrame()
-
-symbols = {
-    "黃金 (GC=F)": "GC=F",
-    "白銀 (SI=F)": "SI=F",
-    "原油 (CL=F)": "CL=F",
-    "天然氣 (NG=F)": "NG=F",
-    "比特幣 (BTC-USD)": "BINANCE:BTCUSDT",
-    "SPDR黃金ETF (GLD)": "GLD",
-    "Tesla (TSLA)": "TSLA",
-    "Apple (AAPL)": "AAPL",
-    "Amazon (AMZN)": "AMZN",
-    "Netflix (NFLX)": "NFLX",
-    "愛奇藝 (IQ)": "IQ"
+# 設定中文/英文標籤對照與替代商品清單
+asset_map = {
+    "Gold (GC=F)": ["GC=F", "GLD", "IAU"],
+    "Silver (SI=F)": ["SI=F", "SLV"],
+    "Oil (CL=F)": ["CL=F", "USO"],
+    "Bitcoin (BTC-USD)": ["BTC-USD"],
+    "Apple (AAPL)": ["AAPL"]
 }
 
-finnhub_assets = {"AAPL", "TSLA", "AMZN", "NFLX", "IQ", "BINANCE:BTCUSDT"}
+# 自動修正日期與資料下載函式
+def safe_download(ticker_list, start_date, end_date):
+    max_date = date.today() - timedelta(days=2)
+    if end_date > max_date:
+        end_date = max_date
 
-fallback_map = {
-    "GC=F": "GLD",
-    "SI=F": "SLV",
-    "NG=F": "UNG"
-}
-
-st.title("📊 多商品 RSI 策略分析儀表板")
-st.markdown("更新日期：2025/04/29")
-
-product = st.selectbox("請選擇商品：", list(symbols.keys()))
-symbol = symbols[product]
-
-start_date = st.date_input("起始日期", pd.to_datetime("2023-01-01"))
-end_date = st.date_input("結束日期", pd.to_datetime("today"))
-
-# 加入 Finnhub 即時 API 測試按鈕
-if st.button("🔍 測試 API 是否可取得資料 (Finnhub)"):
-    if symbol in finnhub_assets:
-        st.info(f"正在查詢 Finnhub 上的 {symbol}...")
+    for code in ticker_list:
         try:
-            test_start = datetime(2024, 4, 1)
-            test_end = datetime(2024, 4, 10)
-            start_unix = int(time.mktime(test_start.timetuple()))
-            end_unix = int(time.mktime(test_end.timetuple()))
-            res = finnhub_client.stock_candles(symbol, 'D', start_unix, end_unix)
-            st.write("📦 API 回傳 JSON：")
-            st.json(res)
-            if res.get("s") == "ok":
-                st.success("✅ API 回傳成功，有資料！")
-            else:
-                st.warning("⚠️ API 回傳成功，但無資料（s ≠ ok）")
+            df = yf.download(code, start=start_date, end=end_date)
+            if not df.empty:
+                df["symbol_used"] = code
+                return df
         except Exception as e:
-            st.error(f"❌ 呼叫 API 時錯誤：{e}")
-    else:
-        st.warning("此商品不在 Finnhub 支援列表中，將使用 yfinance")
+            print(f"⚠ Error downloading {code}: {e}")
+    return None
 
-# 以下為原本資料讀取與圖表流程
+# RSI 策略信號產生
+def apply_rsi_strategy(df, rsi_period=14, lower=30, upper=70):
+    df["RSI"] = ta.momentum.RSIIndicator(df["Close"], window=rsi_period).rsi()
+    df["Signal"] = 0
+    df.loc[df["RSI"] < lower, "Signal"] = 1
+    df.loc[df["RSI"] > upper, "Signal"] = -1
+    df["Strategy Return"] = df["Signal"].shift(1) * df["Close"].pct_change()
+    df["Cumulative Return"] = (1 + df["Strategy Return"]).cumprod()
+    return df
 
-debug_logs = []
-df = pd.DataFrame()
-success = False
+# UI 部分
+st.title("📈 Multi-Asset RSI Strategy Dashboard")
+asset_label = st.selectbox("Select Asset", list(asset_map.keys()))
+start_date = st.date_input("Start Date", value=date(2023, 1, 1))
+end_date = st.date_input("End Date", value=date(2025, 4, 30))
 
-try:
-    debug_logs.append(f"原始代碼查詢：{symbol}")
+# 資料下載
+df = safe_download(asset_map[asset_label], start_date, end_date)
 
-    def attempt_download(sym):
-        for i in range(8):
-            adjusted_end = end_date - timedelta(days=i)
-            debug_logs.append(f"嘗試下載資料：{sym}, 結束日期：{adjusted_end}")
-            if sym in finnhub_assets:
-                data = get_finnhub_price_data(sym, start_date, adjusted_end)
-            else:
-                data = yf.download(sym, start=start_date, end=adjusted_end)
-            if not data.empty:
-                debug_logs.append(f"✅ 成功取得資料，使用結束日期：{adjusted_end}")
-                return data, adjusted_end
-        return pd.DataFrame(), None
+if df is None:
+    st.error("Unable to retrieve data. Try different dates or assets.")
+else:
+    actual_symbol = df["symbol_used"].iloc[0]
+    st.success(f"Data loaded: {actual_symbol} — from {df.index.min().date()} to {df.index.max().date()}")
 
-    df, final_end = attempt_download(symbol)
+    df = apply_rsi_strategy(df)
 
-    if df.empty and symbol in fallback_map:
-        fallback = fallback_map[symbol]
-        st.warning(f"⚠️ 無法取得 {symbol} 資料，自動改用替代商品：{fallback}")
-        debug_logs.append(f"原始資料為空，改用替代商品：{fallback}")
-        df, final_end = attempt_download(fallback)
-        symbol = fallback
-        product += f"（改為 {fallback}）"
+    # 顯示 RSI 圖
+    st.subheader("🔍 RSI Signal")
+    fig1, ax1 = plt.subplots(figsize=(10, 4))
+    ax1.plot(df.index, df["RSI"], label="RSI", color="blue")
+    ax1.axhline(70, color="red", linestyle="--")
+    ax1.axhline(30, color="green", linestyle="--")
+    ax1.set_title("RSI Indicator")
+    st.pyplot(fig1)
 
-    if df.empty:
-        st.warning(f"⚠️ 無法取得「{product}」的歷史資料，請稍後再試，或選擇其他商品。")
-        st.info(f"📅 最後可用資料日期：尚無資料記錄（可能為資料來源暫時中斷）")
-        debug_logs.append("最終資料仍為空，未能成功下載任何可用資料。")
-    else:
-        st.info(f"✅ 資料來自：{symbol}，結束日期：{final_end}")
-        delta = df['Close'].diff()
-        gain = delta.clip(lower=0)
-        loss = -delta.clip(upper=0)
-        avg_gain = gain.rolling(window=14).mean()
-        avg_loss = loss.rolling(window=14).mean()
-        rs = avg_gain / avg_loss
-        rsi = 100 - (100 / (1 + rs))
-        df['RSI'] = rsi
+    # 顯示績效報酬圖
+    st.subheader("💰 Strategy Backtest Performance")
+    fig2, ax2 = plt.subplots(figsize=(10, 4))
+    ax2.plot(df.index, df["Cumulative Return"], label="Strategy Return", color="orange")
+    ax2.set_title("Cumulative Strategy Return")
+    st.pyplot(fig2)
 
-        fig, ax = plt.subplots(2, 1, figsize=(10, 6), sharex=True)
-        ax[0].plot(df['Close'], label='收盤價')
-        ax[0].set_title(f"{product} 價格走勢")
-        ax[0].legend()
-        ax[1].plot(df['RSI'], label='RSI (14)', color='orange')
-        ax[1].axhline(70, linestyle='--', color='red', alpha=0.5)
-        ax[1].axhline(30, linestyle='--', color='green', alpha=0.5)
-        ax[1].set_title("RSI 指標")
-        ax[1].legend()
-        st.pyplot(fig)
+    # 顯示策略統計
+    st.subheader("📊 Strategy Summary")
+    final_return = df["Cumulative Return"].iloc[-1]
+    win_rate = (df["Strategy Return"] > 0).sum() / df["Strategy Return"].count()
+    st.markdown(f"""
+    - **Final cumulative return**: `{final_return:.2f}x`
+    - **Win rate**: `{win_rate:.2%}`
+    """)
 
-except Exception as e:
-    err = traceback.format_exc()
-    debug_logs.append("⚠️ 發生例外錯誤：\n" + err)
-    st.error(f"資料擷取時發生錯誤：{e}")
-
-with st.expander("🧾 錯誤追蹤報表與 Debug 日誌", expanded=True):
-    for log in debug_logs:
-        st.code(log)
-    if not df.empty:
-        st.write("✅ 下載資料範例：")
-        st.dataframe(df.head())
