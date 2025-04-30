@@ -1,4 +1,4 @@
-# 多商品 RSI 策略分析儀表板 - 自動回補資料 + 錯誤追蹤報表
+# 多商品 RSI 策略分析儀表板 - 修正 .date() 錯誤
 
 import streamlit as st
 import yfinance as yf
@@ -45,10 +45,10 @@ try:
 
     for i in range(8):  # 往回最多 7 天
         adjusted_end = end_date - timedelta(days=i)
-        debug_logs.append(f"嘗試下載資料：{symbol}, 結束日期：{adjusted_end.date()}")
+        debug_logs.append(f"嘗試下載資料：{symbol}, 結束日期：{adjusted_end}")
         df = yf.download(symbol, start=start_date, end=adjusted_end)
         if not df.empty:
-            debug_logs.append(f"✅ 成功取得資料，使用結束日期：{adjusted_end.date()}")
+            debug_logs.append(f"✅ 成功取得資料，使用結束日期：{adjusted_end}")
             end_date = adjusted_end
             success = True
             break
@@ -60,10 +60,10 @@ try:
 
         for i in range(8):
             adjusted_end = end_date - timedelta(days=i)
-            debug_logs.append(f"嘗試下載替代資料：{fallback}, 結束日期：{adjusted_end.date()}")
+            debug_logs.append(f"嘗試下載替代資料：{fallback}, 結束日期：{adjusted_end}")
             df = yf.download(fallback, start=start_date, end=adjusted_end)
             if not df.empty:
-                debug_logs.append(f"✅ 成功取得替代商品資料，結束日期：{adjusted_end.date()}")
+                debug_logs.append(f"✅ 成功取得替代商品資料，結束日期：{adjusted_end}")
                 symbol = fallback
                 product += f"（改為 {fallback}）"
                 end_date = adjusted_end
