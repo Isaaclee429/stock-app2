@@ -1,11 +1,11 @@
-# 多商品 RSI 策略分析儀表板 - 含替代商品與 Debug 日誌
+# 多商品 RSI 策略分析儀表板 - 含錯誤追蹤報表與 Debug
 
 import streamlit as st
 import yfinance as yf
 import pandas as pd
 import matplotlib.pyplot as plt
+import traceback
 
-# 商品代碼對照表
 symbols = {
     "黃金 (GC=F)": "GC=F",
     "白銀 (SI=F)": "SI=F",
@@ -20,14 +20,12 @@ symbols = {
     "愛奇藝 (IQ)": "IQ"
 }
 
-# 替代代碼對照表
 fallback_map = {
     "GC=F": "GLD",
     "SI=F": "SLV",
     "NG=F": "UNG"
 }
 
-# Streamlit UI
 st.title("📊 多商品 RSI 策略分析儀表板")
 st.markdown("更新日期：2025/04/29")
 
@@ -37,27 +35,25 @@ symbol = symbols[product]
 start_date = st.date_input("起始日期", pd.to_datetime("2023-01-01"))
 end_date = st.date_input("結束日期", pd.to_datetime("today"))
 
-# Debug 日誌區塊
-with st.expander("🔍 Debug 日誌"):
-    st.write(f"原始代碼：{symbol}")
-    st.write(f"查詢日期區間：{start_date} ~ {end_date}")
+debug_logs = []
+df = pd.DataFrame()
 
-# 嘗試抓取資料
 try:
+    debug_logs.append(f"原始代碼查詢：{symbol}")
     df = yf.download(symbol, start=start_date, end=end_date)
+
     if df.empty and symbol in fallback_map:
         fallback = fallback_map[symbol]
+        debug_logs.append(f"原始資料為空，改用替代商品：{fallback}")
         st.warning(f"⚠️ 無法取得 {symbol} 資料，自動改用替代商品：{fallback}")
         df = yf.download(fallback, start=start_date, end=end_date)
         symbol = fallback
         product += f"（改為 {fallback}）"
-        with st.expander("🔍 Debug 日誌", expanded=True):
-            st.write(f"使用替代代碼：{symbol}")
-            st.write("使用 fallback 替代機制")
 
     if df.empty:
         st.warning(f"⚠️ 無法取得「{product}」的歷史資料，請稍後再試，或選擇其他商品。")
         st.info(f"📅 最後可用資料日期：尚無資料記錄（可能為資料來源暫時中斷）")
+        debug_logs.append("最終資料仍為空，未能成功下載任何可用資料。")
     else:
         delta = df['Close'].diff()
         gain = delta.clip(lower=0)
@@ -80,4 +76,14 @@ try:
         st.pyplot(fig)
 
 except Exception as e:
+    err = traceback.format_exc()
+    debug_logs.append("⚠️ 發生例外錯誤：\n" + err)
     st.error(f"資料擷取時發生錯誤：{e}")
+
+# Debug 日誌與追蹤報表區塊
+with st.expander("🧾 錯誤追蹤報表與 Debug 日誌", expanded=True):
+    for log in debug_logs:
+        st.code(log)
+    if not df.empty:
+        st.write("✅ 下載資料範例：")
+        st.dataframe(df.head())
