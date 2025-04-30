@@ -10,7 +10,7 @@ import finnhub
 import time
 
 # 初始化 Finnhub（請填入你自己的 API 金鑰）
-FINNHUB_API_KEY = "YOUR_API_KEY_HERE"  # ⬅️ 你要在這裡填入 API Key
+FINNHUB_API_KEY = "d08nb41r01qju5m7is30d08nb41r01qju5m7is3g"  # ⬅️ 你要在這裡填入 API Key
 finnhub_client = finnhub.Client(api_key=FINNHUB_API_KEY)
 
 def get_finnhub_price_data(symbol, start_date, end_date):
