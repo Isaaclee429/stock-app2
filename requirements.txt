@@ -1,6 +1,5 @@
 streamlit
 yfinance
-ta
-matplotlib
 pandas
-fpdf
+matplotlib
+finnhub-python
