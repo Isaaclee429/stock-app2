@@ -1,4 +1,4 @@
-# 多商品 RSI 策略分析儀表板 - 修正 .date() 錯誤
+# 多商品 RSI 策略分析儀表板 - 整合 Finnhub API 替代資料源
 
 import streamlit as st
 import yfinance as yf
@@ -6,13 +6,41 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import traceback
 from datetime import timedelta
+import finnhub
+import time
+
+# 初始化 Finnhub（請填入你自己的 API 金鑰）
+FINNHUB_API_KEY = "YOUR_API_KEY_HERE"  # ⬅️ 你要在這裡填入 API Key
+finnhub_client = finnhub.Client(api_key=FINNHUB_API_KEY)
+
+def get_finnhub_price_data(symbol, start_date, end_date):
+    try:
+        start_unix = int(time.mktime(start_date.timetuple()))
+        end_unix = int(time.mktime(end_date.timetuple()))
+        res = finnhub_client.stock_candles(symbol, 'D', start_unix, end_unix)
+        if res and res['s'] == 'ok':
+            df = pd.DataFrame({
+                'Date': pd.to_datetime(res['t'], unit='s'),
+                'Open': res['o'],
+                'High': res['h'],
+                'Low': res['l'],
+                'Close': res['c'],
+                'Volume': res['v']
+            })
+            df.set_index('Date', inplace=True)
+            return df
+        else:
+            return pd.DataFrame()
+    except Exception as e:
+        st.error(f"Finnhub 抓取失敗：{e}")
+        return pd.DataFrame()
 
 symbols = {
     "黃金 (GC=F)": "GC=F",
     "白銀 (SI=F)": "SI=F",
     "原油 (CL=F)": "CL=F",
     "天然氣 (NG=F)": "NG=F",
-    "比特幣 (BTC-USD)": "BTC-USD",
+    "比特幣 (BTC-USD)": "BINANCE:BTCUSDT",
     "SPDR黃金ETF (GLD)": "GLD",
     "Tesla (TSLA)": "TSLA",
     "Apple (AAPL)": "AAPL",
@@ -20,6 +48,8 @@ symbols = {
     "Netflix (NFLX)": "NFLX",
     "愛奇藝 (IQ)": "IQ"
 }
+
+finnhub_assets = {"AAPL", "TSLA", "AMZN", "NFLX", "IQ", "GLD", "BINANCE:BTCUSDT"}
 
 fallback_map = {
     "GC=F": "GLD",
@@ -43,38 +73,35 @@ success = False
 try:
     debug_logs.append(f"原始代碼查詢：{symbol}")
 
-    for i in range(8):  # 往回最多 7 天
-        adjusted_end = end_date - timedelta(days=i)
-        debug_logs.append(f"嘗試下載資料：{symbol}, 結束日期：{adjusted_end}")
-        df = yf.download(symbol, start=start_date, end=adjusted_end)
-        if not df.empty:
-            debug_logs.append(f"✅ 成功取得資料，使用結束日期：{adjusted_end}")
-            end_date = adjusted_end
-            success = True
-            break
+    def attempt_download(sym):
+        for i in range(8):
+            adjusted_end = end_date - timedelta(days=i)
+            debug_logs.append(f"嘗試下載資料：{sym}, 結束日期：{adjusted_end}")
+            if sym in finnhub_assets:
+                data = get_finnhub_price_data(sym, start_date, adjusted_end)
+            else:
+                data = yf.download(sym, start=start_date, end=adjusted_end)
+            if not data.empty:
+                debug_logs.append(f"✅ 成功取得資料，使用結束日期：{adjusted_end}")
+                return data, adjusted_end
+        return pd.DataFrame(), None
 
-    if not success and symbol in fallback_map:
+    df, final_end = attempt_download(symbol)
+
+    if df.empty and symbol in fallback_map:
         fallback = fallback_map[symbol]
         st.warning(f"⚠️ 無法取得 {symbol} 資料，自動改用替代商品：{fallback}")
         debug_logs.append(f"原始資料為空，改用替代商品：{fallback}")
+        df, final_end = attempt_download(fallback)
+        symbol = fallback
+        product += f"（改為 {fallback}）"
 
-        for i in range(8):
-            adjusted_end = end_date - timedelta(days=i)
-            debug_logs.append(f"嘗試下載替代資料：{fallback}, 結束日期：{adjusted_end}")
-            df = yf.download(fallback, start=start_date, end=adjusted_end)
-            if not df.empty:
-                debug_logs.append(f"✅ 成功取得替代商品資料，結束日期：{adjusted_end}")
-                symbol = fallback
-                product += f"（改為 {fallback}）"
-                end_date = adjusted_end
-                success = True
-                break
-
-    if not success:
+    if df.empty:
         st.warning(f"⚠️ 無法取得「{product}」的歷史資料，請稍後再試，或選擇其他商品。")
         st.info(f"📅 最後可用資料日期：尚無資料記錄（可能為資料來源暫時中斷）")
         debug_logs.append("最終資料仍為空，未能成功下載任何可用資料。")
     else:
+        st.info(f"✅ 資料來自：{symbol}，結束日期：{final_end}")
         delta = df['Close'].diff()
         gain = delta.clip(lower=0)
         loss = -delta.clip(upper=0)
