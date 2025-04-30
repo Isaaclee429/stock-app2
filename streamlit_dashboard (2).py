@@ -7,7 +7,7 @@ from fpdf import FPDF
 from datetime import date, timedelta
 import io
 
-# 多商品備援代碼表
+# 商品與備援代碼
 asset_map = {
     "Gold (GC=F)": ["GC=F", "GLD", "IAU"],
     "Silver (SI=F)": ["SI=F", "SLV"],
@@ -16,25 +16,27 @@ asset_map = {
     "Apple (AAPL)": ["AAPL"]
 }
 
-# 自動回補資料下載函數（帶錯誤紀錄）
-def safe_download_v3(ticker_list, start_date, end_date, lookback_days=7):
+# 強化版資料下載：整體回溯區間與多商品備援
+def safe_download_v4(ticker_list, start_date, end_date, max_lookback_days=30):
     max_allowed = date.today() - timedelta(days=2)
     end_date = min(end_date, max_allowed)
     attempt_log = []
-    for offset in range(lookback_days):
-        try_end = end_date - timedelta(days=offset)
+
+    for back_offset in range(max_lookback_days):
+        try_start = start_date - timedelta(days=back_offset)
+        try_end = end_date - timedelta(days=back_offset)
         for symbol in ticker_list:
             try:
-                df = yf.download(symbol, start=start_date, end=try_end)
-                attempt_log.append((symbol, try_end, not df.empty))
+                df = yf.download(symbol, start=try_start, end=try_end)
+                attempt_log.append((symbol, try_start, try_end, not df.empty))
                 if not df.empty:
                     df["symbol_used"] = symbol
-                    return df, try_end, attempt_log
+                    return df, try_start, try_end, attempt_log
             except Exception as e:
-                attempt_log.append((symbol, try_end, False))
-    return None, None, attempt_log
+                attempt_log.append((symbol, try_start, try_end, False))
+    return None, None, None, attempt_log
 
-# RSI 策略應用
+# RSI 策略
 def apply_rsi_strategy(df, rsi_period=14, lower=30, upper=70):
     df["RSI"] = ta.momentum.RSIIndicator(df["Close"], window=rsi_period).rsi()
     df["Signal"] = 0
@@ -44,7 +46,7 @@ def apply_rsi_strategy(df, rsi_period=14, lower=30, upper=70):
     df["Cumulative Return"] = (1 + df["Strategy Return"]).cumprod()
     return df
 
-# 建立 PDF 報告
+# PDF 報告生成功能
 def generate_pdf_report(final_return, win_rate, asset_label, symbol_used):
     pdf = FPDF()
     pdf.add_page()
@@ -58,25 +60,27 @@ def generate_pdf_report(final_return, win_rate, asset_label, symbol_used):
     pdf.output(pdf_output)
     return pdf_output.getvalue()
 
-# UI
-st.title("📊 Multi-Asset RSI Strategy Assistant")
+# Streamlit UI
+st.title("📊 Multi-Asset RSI Strategy Assistant (Stable Version)")
 asset_label = st.selectbox("Select Asset", list(asset_map.keys()))
 start_date = st.date_input("Start Date", value=date(2023, 1, 1))
 end_date = st.date_input("End Date", value=date(2025, 4, 30))
 
-df, adjusted_end, attempt_log = safe_download_v3(asset_map[asset_label], start_date, end_date)
+# 嘗試資料下載與備援代碼
+df, used_start, used_end, attempt_log = safe_download_v4(asset_map[asset_label], start_date, end_date)
 
 if df is None:
-    st.error("❌ No valid data found.")
-    with st.expander("📋 Debug Log"):
-        for sym, d, success in attempt_log:
-            st.text(f"{sym} on {d}: {'✅ Success' if success else '❌ Empty'}")
+    st.error("❌ No valid data found after fallback and backtracking.")
+    with st.expander("🧾 Debug Download Attempts"):
+        for sym, s, e, success in attempt_log:
+            st.text(f"{sym} | {s} → {e}: {'✅ Success' if success else '❌ Empty'}")
 else:
     symbol_used = df["symbol_used"].iloc[0]
-    st.success(f"✅ Data loaded from `{symbol_used}` up to `{adjusted_end}`")
+    st.success(f"✅ Data loaded from `{symbol_used}`: {used_start} ~ {used_end}")
+
     df = apply_rsi_strategy(df)
 
-    # 圖：RSI
+    # RSI 圖
     st.subheader("🔍 RSI Indicator")
     fig1, ax1 = plt.subplots(figsize=(10, 4))
     ax1.plot(df.index, df["RSI"], color="blue")
@@ -85,14 +89,14 @@ else:
     ax1.set_title("RSI Indicator")
     st.pyplot(fig1)
 
-    # 圖：策略報酬
+    # 策略報酬圖
     st.subheader("💰 Strategy Performance")
     fig2, ax2 = plt.subplots(figsize=(10, 4))
     ax2.plot(df.index, df["Cumulative Return"], color="orange")
     ax2.set_title("Cumulative Strategy Return")
     st.pyplot(fig2)
 
-    # 報酬統計
+    # 統計
     final_return = df["Cumulative Return"].iloc[-1]
     win_rate = (df["Strategy Return"] > 0).sum() / df["Strategy Return"].count()
     st.subheader("📈 Strategy Summary")
@@ -101,9 +105,7 @@ else:
     - **Win rate**: `{win_rate:.2%}`
     """)
 
-    # 匯出 CSV
+    # 匯出按鈕
     st.download_button("⬇ Download CSV", df.to_csv().encode(), file_name=f"{symbol_used}_RSI_strategy.csv", mime="text/csv")
-
-    # 匯出 PDF
     pdf_data = generate_pdf_report(final_return, win_rate, asset_label, symbol_used)
     st.download_button("⬇ Download PDF Report", pdf_data, file_name=f"{symbol_used}_RSI_report.pdf", mime="application/pdf")
