@@ -24,9 +24,9 @@ symbol = symbols[symbol_name]
 @st.cache_data
 def load_data(symbol):
     df = yf.download(symbol, start="2023-01-01", end=datetime.today().strftime('%Y-%m-%d'))
-    df.dropna(subset=["Close"], inplace=True)  # 確保 Close 欄位有資料
     if df.empty or "Close" not in df.columns:
         return pd.DataFrame()
+    df.dropna(subset=["Close"], inplace=True)
     df["rsi"] = ta.momentum.RSIIndicator(close=df["Close"]).rsi()
     df["signal"] = "HOLD"
     df.loc[df["rsi"] < 30, "signal"] = "BUY"
@@ -35,7 +35,7 @@ def load_data(symbol):
 
 data = load_data(symbol)
 if data.empty:
-    st.warning("⚠ 無法載入有效資料，請稍後再試或更換商品。")
+    st.warning("⚠ 此商品資料無效或不可用，請稍後再試或更換商品。")
     st.stop()
 
 st.subheader(f"📈 {symbol_name} 價格與 RSI")
