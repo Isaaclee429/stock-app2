@@ -1,122 +1,77 @@
+# streamlit_dashboard.py
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import ta
 import matplotlib.pyplot as plt
-from fpdf import FPDF
-from datetime import date, timedelta
-import io
-import os
+import ta
+from datetime import datetime
 
-# 商品與備援代碼
-asset_map = {
-    "Gold (GC=F)": ["GC=F", "GLD", "IAU"],
-    "Silver (SI=F)": ["SI=F", "SLV"],
-    "Oil (CL=F)": ["CL=F", "USO"],
-    "Bitcoin (BTC-USD)": ["BTC-USD"],
-    "Apple (AAPL)": ["AAPL"]
+st.set_page_config(page_title="多商品 RSI 策略分析儀表板", layout="wide")
+st.title("📊 多商品 RSI 策略分析儀表板")
+
+symbols = {
+    "黃金 (GC=F)": "GC=F",
+    "天然氣 (NG=F)": "NG=F",
+    "比特幣 (BTC-USD)": "BTC-USD",
+    "Apple (AAPL)": "AAPL",
+    "Tesla (TSLA)": "TSLA",
+    "QQQ (納指ETF)": "QQQ"
 }
 
-# 強化下載 + 區間回溯 + 錯誤日誌
-def safe_download_v4(ticker_list, start_date, end_date, max_lookback_days=30):
-    max_allowed = date.today() - timedelta(days=2)
-    end_date = min(end_date, max_allowed)
-    attempt_log = []
+symbol_name = st.sidebar.selectbox("選擇商品：", list(symbols.keys()))
+symbol = symbols[symbol_name]
 
-    for back_offset in range(max_lookback_days):
-        try_start = start_date - timedelta(days=back_offset)
-        try_end = end_date - timedelta(days=back_offset)
-        for symbol in ticker_list:
-            try:
-                df = yf.download(symbol, start=try_start, end=try_end)
-                attempt_log.append((symbol, try_start, try_end, not df.empty))
-                if not df.empty:
-                    df["symbol_used"] = symbol
-                    return df, try_start, try_end, attempt_log
-            except Exception as e:
-                attempt_log.append((symbol, try_start, try_end, False))
-    return None, None, None, attempt_log
-
-# RSI 策略
-def apply_rsi_strategy(df, rsi_period=14, lower=30, upper=70):
-    df["RSI"] = ta.momentum.RSIIndicator(df["Close"], window=rsi_period).rsi()
-    df["Signal"] = 0
-    df.loc[df["RSI"] < lower, "Signal"] = 1
-    df.loc[df["RSI"] > upper, "Signal"] = -1
-    df["Strategy Return"] = df["Signal"].shift(1) * df["Close"].pct_change()
-    df["Cumulative Return"] = (1 + df["Strategy Return"]).cumprod()
+@st.cache_data
+def load_data(symbol):
+    df = yf.download(symbol, start="2023-01-01", end=datetime.today().strftime('%Y-%m-%d'))
+    df.dropna(inplace=True)
+    df["rsi"] = ta.momentum.RSIIndicator(close=df["Close"]).rsi()
+    df["signal"] = "HOLD"
+    df.loc[df["rsi"] < 30, "signal"] = "BUY"
+    df.loc[df["rsi"] > 70, "signal"] = "SELL"
     return df
 
-# 匯出 PDF 報告
-def generate_pdf_report(final_return, win_rate, asset_label, symbol_used):
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", size=12)
-    pdf.cell(200, 10, txt="RSI Strategy Report", ln=True, align="C")
-    pdf.ln(10)
-    pdf.cell(200, 10, txt=f"Asset: {asset_label} ({symbol_used})", ln=True)
-    pdf.cell(200, 10, txt=f"Final cumulative return: {final_return:.2f}x", ln=True)
-    pdf.cell(200, 10, txt=f"Win rate: {win_rate:.2%}", ln=True)
-    pdf_output = io.BytesIO()
-    pdf.output(pdf_output)
-    return pdf_output.getvalue()
+data = load_data(symbol)
 
-# 主頁 UI
-st.title("📊 Multi-Asset RSI Strategy Assistant (Stable + Offline Fallback)")
-asset_label = st.selectbox("Select Asset", list(asset_map.keys()))
-start_date = st.date_input("Start Date", value=date(2023, 1, 1))
-end_date = st.date_input("End Date", value=date(2025, 4, 30))
+st.subheader(f"📈 {symbol_name} 價格與 RSI")
+st.line_chart(data[["Close", "rsi"]])
 
-# 嘗試從網路抓資料
-df, used_start, used_end, attempt_log = safe_download_v4(asset_map[asset_label], start_date, end_date)
+latest_price = data["Close"].iloc[-1]
+latest_rsi = data["rsi"].iloc[-1]
+latest_signal = data["signal"].iloc[-1]
 
-# 若網路資料失敗 → 改用本地 CSV 備援
-if df is None:
-    st.warning("⚠️ Online data not available, trying local CSV backup...")
-    for sym in asset_map[asset_label]:
-        csv_path = f"local_backup_{sym.replace('=','')}.csv"
-        if os.path.exists(csv_path):
-            df = pd.read_csv(csv_path, index_col=0, parse_dates=True)
-            df["symbol_used"] = sym
-            used_start = df.index.min().date()
-            used_end = df.index.max().date()
-            st.success(f"✅ Loaded local CSV backup: `{csv_path}`")
-            break
+st.metric("最新價格", f"${latest_price:.2f}")
+st.metric("RSI 值", f"{latest_rsi:.2f}")
+st.metric("建議操作", latest_signal)
 
-# 如果還是無資料 → 報錯並顯示日誌
-if df is None or df.empty:
-    st.error("❌ No valid data found even with local backup.")
-    with st.expander("🧾 Download Attempts"):
-        for sym, s, e, success in attempt_log:
-            st.text(f"{sym} | {s} → {e}: {'✅ Success' if success else '❌ Empty'}")
-else:
-    symbol_used = df["symbol_used"].iloc[0]
-    st.success(f"✅ Data loaded from `{symbol_used}` ({used_start} ~ {used_end})")
-    df = apply_rsi_strategy(df)
+# RSI 策略模擬績效
+initial_cash = 10000
+cash = initial_cash
+position = 0.0
+portfolio = []
 
-    # RSI 圖
-    st.subheader("🔍 RSI Indicator")
-    fig1, ax1 = plt.subplots(figsize=(10, 4))
-    ax1.plot(df.index, df["RSI"], color="blue")
-    ax1.axhline(70, color="red", linestyle="--")
-    ax1.axhline(30, color="green", linestyle="--")
-    ax1.set_title("RSI Indicator")
-    st.pyplot(fig1)
+for i in range(1, len(data)):
+    signal = data["signal"].iloc[i]
+    price = data["Close"].iloc[i]
+    if signal == "BUY" and cash > 0:
+        position = cash / price
+        cash = 0
+    elif signal == "SELL" and position > 0:
+        cash = position * price
+        position = 0
+    total_value = cash + position * price
+    portfolio.append(total_value)
 
-    # 策略績效圖
-    st.subheader("💰 Strategy Performance")
-    fig2, ax2 = plt.subplots(figsize=(10, 4))
-    ax2.plot(df.index, df["Cumulative Return"], color="orange")
-    ax2.set_title("Cumulative Return")
-    st.pyplot(fig2)
+data = data.iloc[1:]
+data["portfolio"] = portfolio
 
-    # 回測統計
-    final_return = df["Cumulative Return"].iloc[-1]
-    win_rate = (df["Strategy Return"] > 0).sum() / df["Strategy Return"].count()
-    st.subheader("📈 Summary")
-    st.markdown(f"- **Final Return**: `{final_return:.2f}x`\n- **Win Rate**: `{win_rate:.2%}`")
+total_return = (portfolio[-1] - initial_cash) / initial_cash * 100
+st.subheader("💰 RSI 策略模擬資產變化")
+fig, ax = plt.subplots()
+ax.plot(data.index, data["portfolio"], label="資產價值")
+ax.set_title(f"{symbol_name} RSI 策略模擬績效")
+ax.set_ylabel("資產 (USD)")
+ax.grid(True)
+st.pyplot(fig)
 
-    # 匯出按鈕
-    st.download_button("⬇ Download CSV", df.to_csv().encode(), file_name=f"{symbol_used}_RSI.csv", mime="text/csv")
-    pdf_bytes = generate_pdf_report(final_return, win_rate, asset_label, symbol_used)
-    st.download_button("⬇ Download PDF Report", pdf_bytes, file_name=f"{symbol_used}_RSI_Report.pdf", mime="application/pdf")
+st.success(f"策略總報酬：{total_return:.2f}%")
