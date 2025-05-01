@@ -1,10 +1,11 @@
-# streamlit_dashboard.py
+# streamlit_dashboard.py（最穩定版）
 import streamlit as st
 import yfinance as yf
 import pandas as pd
 import matplotlib.pyplot as plt
 import ta
 from datetime import datetime
+import os
 
 st.set_page_config(page_title="多商品 RSI 策略分析儀表板", layout="wide")
 st.title("📊 多商品 RSI 策略分析儀表板")
@@ -21,22 +22,34 @@ symbols = {
 symbol_name = st.sidebar.selectbox("選擇商品：", list(symbols.keys()))
 symbol = symbols[symbol_name]
 
+# 嘗試抓取資料，若失敗則使用備援 CSV
 @st.cache_data
-def load_data(symbol):
-    df = yf.download(symbol, start="2023-01-01", end=datetime.today().strftime('%Y-%m-%d'))
-    if df.empty or "Close" not in df.columns:
-        return pd.DataFrame()
-    df.dropna(subset=["Close"], inplace=True)
-    df["rsi"] = ta.momentum.RSIIndicator(close=df["Close"]).rsi()
-    df["signal"] = "HOLD"
-    df.loc[df["rsi"] < 30, "signal"] = "BUY"
-    df.loc[df["rsi"] > 70, "signal"] = "SELL"
+def safe_load_data(symbol):
+    try:
+        df = yf.download(symbol, start="2023-01-01", end=datetime.today().strftime('%Y-%m-%d'))
+        if df.empty or "Close" not in df.columns:
+            raise ValueError("Empty or missing Close")
+    except:
+        backup_file = f"local_backup_{symbol.replace('=','').replace('-','')}.csv"
+        if os.path.exists(backup_file):
+            st.warning(f"⚠️ 線上資料失敗，改用備援資料：{backup_file}")
+            df = pd.read_csv(backup_file, parse_dates=["Date"])
+            df.set_index("Date", inplace=True)
+        else:
+            return pd.DataFrame()
     return df
 
-data = load_data(symbol)
+data = safe_load_data(symbol)
 if data.empty:
-    st.warning("⚠ 此商品資料無效或不可用，請稍後再試或更換商品。")
+    st.error("❌ 此商品無有效資料，請稍後再試或更換商品。")
     st.stop()
+
+# 加入 RSI 與交易信號
+data.dropna(subset=["Close"], inplace=True)
+data["rsi"] = ta.momentum.RSIIndicator(close=data["Close"]).rsi()
+data["signal"] = "HOLD"
+data.loc[data["rsi"] < 30, "signal"] = "BUY"
+data.loc[data["rsi"] > 70, "signal"] = "SELL"
 
 st.subheader(f"📈 {symbol_name} 價格與 RSI")
 st.line_chart(data[["Close", "rsi"]])
